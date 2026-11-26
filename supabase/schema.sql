@@ -1,6 +1,6 @@
 -- ============================================================================
 -- SMK PRIMA UNGGUL - SUPABASE DATABASE SCHEMA & RLS POLICIES
--- Jalankan script ini pada SQL Editor di Dashboard Supabase Anda.
+-- Script ini idempoten (aman dijalankan ulang di SQL Editor Supabase).
 -- ============================================================================
 
 -- 1. Tabel Profil Karyawan / Pengguna (tersinkronisasi dengan auth.users)
@@ -109,7 +109,7 @@ alter table public.students enable row level security;
 alter table public.employee_attendance enable row level security;
 alter table public.student_attendance enable row level security;
 
--- Helper function cek role user aktif
+-- Helper function cek role user aktif & cek apakah sudah ada user terdaftar
 create or replace function public.current_user_role()
 returns text
 language sql
@@ -120,12 +120,26 @@ as $$
   select role from public.profiles where id = auth.uid() limit 1;
 $$;
 
+create or replace function public.has_any_user()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists(select 1 from public.profiles);
+$$;
+
+grant execute on function public.has_any_user() to anon, authenticated;
+
 -- RLS: profiles
+drop policy if exists "Profiles readable by authenticated users" on public.profiles;
 create policy "Profiles readable by authenticated users"
   on public.profiles for select
   to authenticated
   using (true);
 
+drop policy if exists "Users can update own profile name" on public.profiles;
 create policy "Users can update own profile name"
   on public.profiles for update
   to authenticated
@@ -133,11 +147,13 @@ create policy "Users can update own profile name"
   with check (auth.uid() = id or public.current_user_role() = 'admin');
 
 -- RLS: students
+drop policy if exists "Students readable by authenticated users" on public.students;
 create policy "Students readable by authenticated users"
   on public.students for select
   to authenticated
   using (true);
 
+drop policy if exists "Admin can manage students" on public.students;
 create policy "Admin can manage students"
   on public.students for all
   to authenticated
@@ -145,16 +161,19 @@ create policy "Admin can manage students"
   with check (public.current_user_role() = 'admin');
 
 -- RLS: employee_attendance
+drop policy if exists "Users see own attendance or admin sees all" on public.employee_attendance;
 create policy "Users see own attendance or admin sees all"
   on public.employee_attendance for select
   to authenticated
   using (user_id = auth.uid() or public.current_user_role() = 'admin');
 
+drop policy if exists "Users can insert own employee attendance" on public.employee_attendance;
 create policy "Users can insert own employee attendance"
   on public.employee_attendance for insert
   to authenticated
   with check (user_id = auth.uid() or public.current_user_role() = 'admin');
 
+drop policy if exists "Users can update own employee attendance" on public.employee_attendance;
 create policy "Users can update own employee attendance"
   on public.employee_attendance for update
   to authenticated
@@ -162,16 +181,19 @@ create policy "Users can update own employee attendance"
   with check (user_id = auth.uid() or public.current_user_role() = 'admin');
 
 -- RLS: student_attendance
+drop policy if exists "Admin and guru can read student attendance" on public.student_attendance;
 create policy "Admin and guru can read student attendance"
   on public.student_attendance for select
   to authenticated
   using (public.current_user_role() in ('admin', 'guru'));
 
+drop policy if exists "Admin and guru can write student attendance" on public.student_attendance;
 create policy "Admin and guru can write student attendance"
   on public.student_attendance for insert
   to authenticated
   with check (public.current_user_role() in ('admin', 'guru'));
 
+drop policy if exists "Admin and guru can update student attendance" on public.student_attendance;
 create policy "Admin and guru can update student attendance"
   on public.student_attendance for update
   to authenticated
